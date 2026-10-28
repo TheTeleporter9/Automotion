@@ -1,0 +1,9 @@
+name: Automotion
+version: '${version}'
+
+main: org.solocode.automotion.Automotion
+api-version: '26.3'
+load: POSTWORLD
+
+authors: [ TheTeleporter9/Solocode ]
+website: Program workers to automate complex tasks that machines can't — powered by Create's kinetic network and kept running with a decent meal.
