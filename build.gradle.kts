@@ -6,10 +6,19 @@ plugins {
 repositories {
     mavenCentral()
     maven("https://repo.papermc.io/repository/maven-public/")
+    maven("https://repo.momirealms.net/releases/")
 }
 
 dependencies {
     compileOnly("io.papermc.paper:paper-api:26.3.build.+")
+    implementation("com.google.inject:guice:6.0.0")
+    annotationProcessor("com.google.inject:guice:6.0.0")
+
+    compileOnly("org.projectlombok:lombok:1.18.48")
+    annotationProcessor("org.projectlombok:lombok:1.18.48")
+
+    compileOnly("net.momirealms:craft-engine-core:26.9")
+    compileOnly("net.momirealms:craft-engine-bukkit:26.9")
 }
 
 java {

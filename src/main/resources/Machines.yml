@@ -1,0 +1,6 @@
+# A basic machine config
+INOUT:
+  Test-assembler:
+    BLOCK: minecraft:crafter
+    RECIPES:
+      DiamondPressurizer:
