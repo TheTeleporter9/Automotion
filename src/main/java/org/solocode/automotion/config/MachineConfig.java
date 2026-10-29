@@ -83,6 +83,10 @@ public final class MachineConfig {
         return instance;
     }
 
+    public Optional<Machine> getMachine(String machineId) {
+        return Optional.ofNullable(machinesById.get(machineId));
+    }
+
     public RecipeItems getItemsFromRecipe(String recipeId) {
         Recipe recipe = recipesById.get(recipeId);
         if (recipe == null) {

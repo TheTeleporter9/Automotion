@@ -1,9 +1,10 @@
 package org.solocode.automotion.Data;
 
+import org.bukkit.Location;
 import org.bukkit.block.Block;
 
 public record PlacedMachine(
-        Machine machine,
-        Block block
+       Location location,
+       Machine definition
 ) {
 }

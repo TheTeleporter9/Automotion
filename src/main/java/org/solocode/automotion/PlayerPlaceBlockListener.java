@@ -1,15 +1,11 @@
-package org.solocode.automotion.Machine.Listeners;
+package org.solocode.automotion;
 
 import org.bukkit.block.Block;
-import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockPlaceEvent;
-import org.solocode.automotion.Automotion;
 import org.solocode.automotion.Blocks.CustomBlockStorage;
-import org.solocode.automotion.Data.Machine;
 import org.solocode.automotion.Items.ItemRegistry;
-import org.solocode.automotion.config.MachineConfig;
 
 public class PlayerPlaceBlockListener implements Listener {
 

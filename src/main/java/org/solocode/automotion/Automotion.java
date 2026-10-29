@@ -7,11 +7,12 @@ import org.solocode.automotion.Commands.ItemMenue.GiveItemsCommand;
 import org.solocode.automotion.Commands.TestCommand;
 import org.solocode.automotion.Items.AutomotionItems;
 import org.solocode.automotion.Items.ItemRegistry;
-import org.solocode.automotion.Machine.Listeners.PlayerPlaceBlockListener;
+import org.solocode.automotion.Machine.MachineBehavior;
+import org.solocode.automotion.Machine.MachineBehaviorRegistry;
+import org.solocode.automotion.Machine.MachineScheduler;
+import org.solocode.automotion.Machine.Machines.AssemblerBehavior;
 import org.solocode.automotion.config.MachineConfig;
 import org.solocode.automotion.Commands.ItemMenue.CustomItemMenu;
-
-import java.io.File;
 
 
 public final class Automotion extends JavaPlugin {
@@ -20,10 +21,22 @@ public final class Automotion extends JavaPlugin {
     ItemRegistry itemRegistry;
     CustomItemMenu itemMenu;
     public CustomBlockStorage storage;
+    private MachineBehaviorRegistry behaviorRegistry;
+    private MachineScheduler machineScheduler;
 
     @Override
     public void onEnable() {
         MachineConfig.init(this);
+
+        behaviorRegistry = new MachineBehaviorRegistry();
+
+        behaviorRegistry.register(
+                "Test-assembler",
+                new AssemblerBehavior()
+        );
+
+        machineScheduler = new MachineScheduler(this, behaviorRegistry);
+        machineScheduler.start();
 
         storage = new CustomBlockStorage(this);
 
@@ -51,6 +64,8 @@ public final class Automotion extends JavaPlugin {
 
     @Override
     public void onDisable() {
-        if (machineTest != null) machineTest.shutdown();
+        if (machineScheduler != null) {
+            machineScheduler.stop();
+        }
     }
 }
