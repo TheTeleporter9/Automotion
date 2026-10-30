@@ -52,6 +52,13 @@ public class ItemRegistry {
         return getItem(id);
     }
 
+    /**
+     * Resolves the custom item id stored on a stack, if it is a registered item.
+     */
+    public Optional<String> getId(ItemStack stack) {
+        return getItem(stack).map(item -> item.id().toString());
+    }
+
     public Collection<CustomItem> getItems() {
         return Collections.unmodifiableCollection(items.values());
     }
@@ -64,6 +71,13 @@ public class ItemRegistry {
         }
 
         return item.createItemStack(itemIdKey);
+    }
+
+    /**
+     * Creates a fresh stack for a registered item id.
+     */
+    public Optional<ItemStack> createItem(String id) {
+        return getItem(id).map(this::createItemStack);
     }
 
 }

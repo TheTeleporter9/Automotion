@@ -1,36 +1,39 @@
 package org.solocode.automotion.Machine;
 
-import org.bukkit.block.Block;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitTask;
-import org.solocode.automotion.Data.Machine;
-import org.solocode.automotion.Data.MachineContext;
+import org.solocode.automotion.Data.BlockPosition;
+import org.solocode.automotion.Data.PlacedMachine;
 
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 
+/**
+ * Central timing scheduler: one task for the whole server, machines spread over
+ * timing buckets. There is never one task per machine.
+ */
 public final class MachineScheduler {
+
     private static final int BUCKET_COUNT = 100;
 
-    private final JavaPlugin plugin;
-    private final MachineBehaviorRegistry behaviors;
-    private final List<List<ScheduledEntry>> buckets =
-            new ArrayList<>(BUCKET_COUNT);
+    @FunctionalInterface
+    public interface TickHandler {
+        void tick(PlacedMachine machine);
+    }
 
-    private final Map<BlockKey, MachineInstance> machines = new HashMap<>();
+    private final JavaPlugin plugin;
+    private final TickHandler handler;
+    private final List<List<ScheduledEntry>> buckets = new ArrayList<>(BUCKET_COUNT);
+    private final Map<BlockPosition, MachineInstance> machines = new HashMap<>();
 
     private long currentTick;
     private BukkitTask task;
 
-    public MachineScheduler(
-            JavaPlugin plugin,
-            MachineBehaviorRegistry behaviors
-    ) {
+    public MachineScheduler(JavaPlugin plugin, TickHandler handler) {
         this.plugin = plugin;
-        this.behaviors = behaviors;
+        this.handler = handler;
 
         for (int i = 0; i < BUCKET_COUNT; i++) {
             buckets.add(new ArrayList<>());
@@ -54,41 +57,30 @@ public final class MachineScheduler {
         buckets.forEach(List::clear);
     }
 
-    public void add(Block block, Machine definition) {
-        BlockKey key = BlockKey.from(block);
-
-        var behavior = behaviors.get(definition.id()).orElseThrow(
-                () -> new IllegalArgumentException(
-                        "No behavior registered for " + definition.id()
-                )
-        );
-
-        int interval = behavior.interval();
-        if (interval < 1) {
-            throw new IllegalArgumentException(
-                    "Machine update interval must be positive"
-            );
+    public void add(PlacedMachine machine, int intervalTicks) {
+        if (intervalTicks < 1) {
+            throw new IllegalArgumentException("Machine update interval must be positive");
         }
 
-        remove(block);
+        remove(machine.position());
 
         MachineInstance instance = new MachineInstance(
-                block, definition, behavior, interval
+                machine, intervalTicks
         );
 
-        machines.put(key, instance);
-        schedule(instance, currentTick + interval);
+        machines.put(machine.position(), instance);
+        schedule(instance, currentTick + intervalTicks);
     }
 
-    public void remove(Block block) {
-        MachineInstance instance = machines.remove(BlockKey.from(block));
+    public void remove(BlockPosition position) {
+        MachineInstance instance = machines.remove(position);
 
         if (instance != null) {
             instance.active = false;
         }
     }
 
-    public int getLoadedMachineCount() {
+    public int size() {
         return machines.size();
     }
 
@@ -121,14 +113,12 @@ public final class MachineScheduler {
             }
 
             try {
-                machine.behavior.update(
-                        new MachineContext(machine.block, machine.definition)
-                );
+                handler.tick(machine.placed);
             } catch (Exception exception) {
                 plugin.getLogger().severe(
                         "Failed to update machine "
-                                + machine.definition.id()
-                                + " at " + machine.block.getLocation()
+                                + machine.placed.definition().id()
+                                + " at " + machine.key.describe()
                                 + ": " + exception.getMessage()
                 );
                 exception.printStackTrace();
@@ -145,47 +135,22 @@ public final class MachineScheduler {
         return buckets.get((int) (tick % BUCKET_COUNT));
     }
 
-    private record BlockKey(
-            UUID worldId,
-            int x,
-            int y,
-            int z
-    ) {
-        static BlockKey from(Block block) {
-            return new BlockKey(
-                    block.getWorld().getUID(),
-                    block.getX(),
-                    block.getY(),
-                    block.getZ()
-            );
-        }
-    }
-
     private record ScheduledEntry(
             MachineInstance machine,
             long dueTick
     ) {}
 
     private static final class MachineInstance {
-        private final BlockKey key;
-        private final Block block;
-        private final Machine definition;
-        private final MachineBehavior behavior;
+        private final BlockPosition key;
+        private final PlacedMachine placed;
         private final int interval;
 
         private long nextTick;
         private boolean active = true;
 
-        private MachineInstance(
-                Block block,
-                Machine definition,
-                MachineBehavior behavior,
-                int interval
-        ) {
-            this.key = BlockKey.from(block);
-            this.block = block;
-            this.definition = definition;
-            this.behavior = behavior;
+        private MachineInstance(PlacedMachine placed, int interval) {
+            this.key = placed.position();
+            this.placed = placed;
             this.interval = interval;
         }
     }

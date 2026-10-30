@@ -19,6 +19,10 @@ dependencies {
 
     compileOnly("net.momirealms:craft-engine-core:26.9")
     compileOnly("net.momirealms:craft-engine-bukkit:26.9")
+
+    testCompileOnly("io.papermc.paper:paper-api:26.3.build.+")
+    testImplementation("org.junit.jupiter:junit-jupiter:5.11.4")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
 java {
@@ -26,6 +30,10 @@ java {
 }
 
 tasks {
+    test {
+        useJUnitPlatform()
+    }
+
     runServer {
         // Configure the Minecraft version for our task.
         // This is the only required configuration besides applying the plugin.

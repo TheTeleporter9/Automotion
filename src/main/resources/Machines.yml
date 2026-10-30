@@ -1,6 +1,36 @@
 # A basic machine config
+#
+# BLOCK is the vanilla block used for the placed machine.
+# ITEM is the custom item that places it (see AutomotionItems).
+# DURATION is the processing time in ticks per craft, INTERVAL the update cadence.
+# GUI is optional: every slot defaults to the documented machine layout.
 INOUT:
   Test-assembler:
     BLOCK: minecraft:crafter
+    ITEM: automotion:basic_crafter
+    DURATION: 200
+    INTERVAL: 10
+    GUI:
+      TITLE: Test assembler
+      INPUT_SLOTS: [5, 6, 7, 8]
+      OUTPUT_SLOTS: [0, 1, 2, 3]
+      IDENTITY_SLOT: 4
+      PROGRESS_SLOTS: [13, 22, 31, 40]
+      RECIPE_SLOT: 49
     RECIPES:
       DiamondPressurizer:
+        IN:
+          - {item: minecraft:dirt, amount: 10}
+          - {item: minecraft:coal, amount: 5}
+        OUT:
+          - {item: minecraft:diamond, amount: 1}
+      CopperPress:
+        IN:
+          - {item: minecraft:copper_ingot, amount: 9}
+        OUT:
+          - {item: minecraft:copper_block, amount: 1}
+      CopperUnpacking:
+        IN:
+          - {item: minecraft:copper_block, amount: 1}
+        OUT:
+          - {item: minecraft:copper_ingot, amount: 9}

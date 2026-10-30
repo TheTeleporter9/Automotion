@@ -1,22 +1,20 @@
 package org.solocode.automotion.config;
 
 
-import lombok.Getter;
 import org.bukkit.Material;
-import org.bukkit.configuration.Configuration;
+import org.bukkit.NamespacedKey;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.MemoryConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.Plugin;
 import org.solocode.automotion.Data.Machine;
+import org.solocode.automotion.Data.MachineLayout;
+import org.solocode.automotion.Data.MachineProperties;
 import org.solocode.automotion.Data.Recipe;
 
-import javax.crypto.Mac;
 import java.io.File;
 import java.io.IOException;
-import java.net.http.WebSocket;
-import java.sql.Driver;
 import java.util.*;
 import java.util.function.Function;
 import java.util.logging.Logger;
@@ -30,14 +28,24 @@ import java.util.logging.Logger;
  *
  * INOUT:
  *   Test-assembler:
- *     BLOCK: minecraft:dropper
+ *     BLOCK: minecraft:crafter
+ *     ITEM: automotion:basic_crafter
+ *     DURATION: 200
+ *     INTERVAL: 10
+ *     GUI:
+ *       TITLE: Test assembler
+ *       INPUT_SLOTS: [5, 6, 7, 8]
+ *       OUTPUT_SLOTS: [0, 1, 2, 3]
+ *       IDENTITY_SLOT: 4
+ *       PROGRESS_SLOTS: [13, 22, 31, 40]
+ *       RECIPE_SLOT: 49
  *     RECIPES:
  *       DiamondPressurizer:
  *         IN:
  *           - {item: minecraft:dirt, amount: 10}
  *           - {item: minecraft:coal, amount: 5}
  *         OUT:
- *           - {item: minecraft:diamond, amount: 1, chance: 1.0}
+ *           - {item: minecraft:diamond, amount: 1}
  *
  */
 
@@ -51,8 +59,10 @@ public final class MachineConfig {
     private final YamlFileLoader fileLoader;
     private final MachineParser machineParser;
     private final Logger logger;
+    private final String defaultNamespace;
 
     private Map<String, Machine> machinesById = Map.of();
+    private Map<String, Machine> machinesByItemId = Map.of();
     private Map<String, Recipe> recipesById = Map.of();
 
     public record RecipeItems(List<ItemStack> in, List<ItemStack> out) {}
@@ -85,6 +95,25 @@ public final class MachineConfig {
 
     public Optional<Machine> getMachine(String machineId) {
         return Optional.ofNullable(machinesById.get(machineId));
+    }
+
+    /**
+     * Resolves the machine definition a placed custom item belongs to.
+     */
+    public Optional<Machine> getMachineByItemId(String itemId) {
+        if (itemId == null) {
+            return Optional.empty();
+        }
+        String canonical = canonicalItemId(itemId);
+        if (canonical == null) {
+            return Optional.empty();
+        }
+        return Optional.ofNullable(machinesByItemId.get(canonical));
+    }
+
+    public Optional<Recipe> getRecipe(String machineId, String recipeId) {
+        Machine machine = machinesById.get(machineId);
+        return machine == null ? Optional.empty() : machine.recipe(recipeId);
     }
 
     public RecipeItems getItemsFromRecipe(String recipeId) {
@@ -137,19 +166,38 @@ public final class MachineConfig {
     private MachineConfig(Plugin plugin, ItemCatalog itemCatalog) {
         this.logger = plugin.getLogger();
         this.fileLoader = new YamlFileLoader(plugin, FILE_NAME);
+        this.defaultNamespace = plugin.getName().toLowerCase(Locale.ROOT);
         RecipeParser recipeParser = new RecipeParser(new ItemParser(itemCatalog, logger), logger);
-        this.machineParser = new MachineParser(recipeParser, logger);
+        this.machineParser = new MachineParser(recipeParser, new ItemParser(itemCatalog, logger), logger, defaultNamespace);
     }
 
     private void clear() {
         machinesById = Map.of();
+        machinesByItemId = Map.of();
         recipesById = Map.of();
     }
 
     private void replaceWith(List<Machine> machines) {
         machinesById = indexById(machines, Machine::id, "machine");
+        machinesByItemId = indexByItemId(machines);
         recipesById = indexById(recipesOf(machines), Recipe::id, "recipe");
         logger.info("Loaded " + machinesById.size() + " machine(s), " + recipesById.size() + " recipe(s)");
+    }
+
+    private Map<String, Machine> indexByItemId(List<Machine> machines) {
+        Map<String, Machine> byItemId = new LinkedHashMap<>();
+        for (Machine machine : machines) {
+            String itemId = machine.itemId();
+            if (itemId == null) {
+                continue;
+            }
+            Machine previous = byItemId.putIfAbsent(itemId, machine);
+            if (previous != null) {
+                logger.warning("ITEM '" + itemId + "' is used by machines '"
+                        + previous.id() + "' and '" + machine.id() + "', keeping '" + previous.id() + "'");
+            }
+        }
+        return Collections.unmodifiableMap(byItemId);
     }
 
     private List<Recipe> recipesOf(List<Machine> machines) {
@@ -173,6 +221,25 @@ public final class MachineConfig {
         if (index.containsKey(id)) {
             logger.warning("Duplicate " + label + " id '" + id + "', keeping the first");
         }
+    }
+
+    /**
+     * Turns 'basic_crafter' or 'automotion:basic_crafter' into a full namespaced key.
+     * Returns null for ids that cannot be parsed.
+     */
+    private String canonicalItemId(String itemId) {
+        String value = itemId.trim();
+        if (value.isEmpty()) {
+            return null;
+        }
+        int separator = value.indexOf(':');
+        String namespace = separator < 0 ? defaultNamespace : value.substring(0, separator);
+        String key = separator < 0 ? value : value.substring(separator + 1);
+        if (namespace.isBlank() || key.isBlank()) {
+            return null;
+        }
+        NamespacedKey namespaced = NamespacedKey.fromString(namespace + ":" + key);
+        return namespaced == null ? null : namespaced.toString();
     }
 
     @FunctionalInterface
@@ -284,6 +351,10 @@ public final class MachineConfig {
             this.logger = logger;
         }
 
+        Optional<ItemStack> find(String itemId) {
+            return itemCatalog.find(itemId);
+        }
+
         List<ItemStack> parseAll(ConfigurationSection recipeSection, String key) {
             String location = recipeSection.getCurrentPath() + "." + key;
             List<Map<?, ?>> entries = recipeSection.getMapList(key);
@@ -343,28 +414,108 @@ public final class MachineConfig {
     }
 
     private static final class MachineParser {
-        private static final Set<String> ALLOWED_KEYS = Set.of("BLOCK", "RECIPES");
+        private static final Set<String> ALLOWED_KEYS =
+                Set.of("BLOCK", "ITEM", "CUSTOM_ITEM", "RECIPES", "DURATION", "INTERVAL", "GUI");
+        private static final Set<String> GUI_KEYS =
+                Set.of("TITLE", "INPUT_SLOTS", "OUTPUT_SLOTS", "IDENTITY_SLOT", "PROGRESS_SLOTS", "RECIPE_SLOT");
 
         private final RecipeParser recipeParser;
+        private final ItemParser itemParser;
         private final Logger logger;
+        private final String defaultNamespace;
 
-        MachineParser(RecipeParser recipeParser, Logger logger) {
+        MachineParser(RecipeParser recipeParser, ItemParser itemParser, Logger logger, String defaultNamespace) {
             this.recipeParser = recipeParser;
+            this.itemParser = itemParser;
             this.logger = logger;
+            this.defaultNamespace = defaultNamespace;
         }
 
         Machine parse(String machineId, ConfigurationSection section) {
             UnknownKeyWarner.warn(section, ALLOWED_KEYS, logger);
-            return new Machine(machineId, readBlockId(section), readRecipes(section));
+            Material block = readBlock(section);
+            String itemId = readItemId(section, block);
+            MachineProperties properties = readProperties(section, machineId);
+            List<Recipe> recipes = readRecipes(section);
+            if (recipes.isEmpty()) {
+                logger.warning(section.getCurrentPath() + ": no valid recipes, machine will idle");
+            }
+            return new Machine(machineId, block.getKey().toString(), recipes, properties, itemId);
         }
 
-        private String readBlockId(ConfigurationSection section) {
+        private Material readBlock(ConfigurationSection section) {
             String blockId = section.getString("BLOCK");
             Material material = blockId == null ? null : Material.matchMaterial(blockId);
             if (material == null || !material.isBlock()) {
                 throw new IllegalArgumentException("BLOCK is missing or not a valid block: '" + blockId + "'");
             }
-            return blockId;
+            return material;
+        }
+
+        private String readItemId(ConfigurationSection section, Material block) {
+            String raw = section.getString("ITEM", section.getString("CUSTOM_ITEM"));
+            if (raw == null || raw.isBlank()) {
+                logger.warning(section.getCurrentPath() + ": ITEM is not defined, this machine cannot be placed");
+                return null;
+            }
+            String canonical = canonicalItemId(raw);
+            if (canonical == null) {
+                throw new IllegalArgumentException("ITEM '" + raw + "' is not a valid item id");
+            }
+            Optional<ItemStack> item = itemParser.find(canonical);
+            if (item.isEmpty()) {
+                logger.warning(section.getCurrentPath() + ": ITEM '" + canonical + "' is not a registered item");
+            } else if (item.get().getType() != block) {
+                logger.warning(section.getCurrentPath() + ": ITEM '" + canonical + "' is "
+                        + item.get().getType() + " but BLOCK is " + block + ", placing it will not look like the block");
+            }
+            return canonical;
+        }
+
+        private String canonicalItemId(String raw) {
+            String value = raw.trim();
+            int separator = value.indexOf(':');
+            String namespace = separator < 0 ? defaultNamespace : value.substring(0, separator);
+            String key = separator < 0 ? value : value.substring(separator + 1);
+            if (namespace.isBlank() || key.isBlank()) {
+                return null;
+            }
+            NamespacedKey namespaced = NamespacedKey.fromString(namespace + ":" + key);
+            return namespaced == null ? null : namespaced.toString();
+        }
+
+        private MachineProperties readProperties(ConfigurationSection section, String machineId) {
+            int duration = readPositiveInt(section, "DURATION", MachineProperties.DEFAULT_DURATION_TICKS);
+            int interval = readPositiveInt(section, "INTERVAL", MachineProperties.DEFAULT_INTERVAL_TICKS);
+            return new MachineProperties(duration, interval, readLayout(section, machineId));
+        }
+
+        private int readPositiveInt(ConfigurationSection section, String key, int fallback) {
+            int value = section.getInt(key, fallback);
+            if (value < 1) {
+                throw new IllegalArgumentException(key + " must be at least 1, got " + value);
+            }
+            return value;
+        }
+
+        private MachineLayout readLayout(ConfigurationSection section, String machineId) {
+            ConfigurationSection gui = section.getConfigurationSection("GUI");
+            MachineLayout defaults = MachineLayout.defaults(machineId);
+            if (gui == null) {
+                return defaults;
+            }
+            UnknownKeyWarner.warn(gui, GUI_KEYS, logger);
+
+            MachineLayout layout = new MachineLayout(
+                    gui.getString("TITLE", defaults.title()),
+                    gui.contains("OUTPUT_SLOTS") ? gui.getIntegerList("OUTPUT_SLOTS") : defaults.outputSlots(),
+                    gui.contains("INPUT_SLOTS") ? gui.getIntegerList("INPUT_SLOTS") : defaults.inputSlots(),
+                    gui.getInt("IDENTITY_SLOT", defaults.identitySlot()),
+                    gui.contains("PROGRESS_SLOTS") ? gui.getIntegerList("PROGRESS_SLOTS") : defaults.progressSlots(),
+                    gui.getInt("RECIPE_SLOT", defaults.recipeSlot())
+            );
+            layout.validate();
+            return layout;
         }
 
         private List<Recipe> readRecipes(ConfigurationSection section) {
